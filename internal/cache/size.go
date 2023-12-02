@@ -239,8 +239,8 @@ func sizeofAccount() uintptr {
 		HideCollections:         func() *bool { ok := true; return &ok }(),
 		SuspensionOrigin:        exampleID,
 		EnableRSS:               func() *bool { ok := true; return &ok }(),
-		ShowAllReplies:          func() *bool { ok := false; return &ok }(),
-		NoisyMode:               func() *bool { ok := false; return &ok }(),
+		ShowAllReplies:          func() *bool { ok := true; return &ok }(),
+		NoisyMode:               func() *bool { ok := true; return &ok }(),
 	}))
 }
 

@@ -94,9 +94,9 @@ type Account struct {
 	// Account has enabled RSS feed.
 	EnableRSS bool `json:"enable_rss,omitempty"`
 	// Account has enabled Show All Replies
-	ShowAllReplies bool `json:"enable_rss,omitempty"`
+	ShowAllReplies bool `json:"show_all_replies,omitempty"`
 	// Account has enabled Noisy Mode.
-	NoisyMode bool `json:"enable_rss,omitempty"`
+	NoisyMode bool `json:"noisy_mode,omitempty"`
 	// Role of the account on this instance.
 	// Omitted for remote accounts.
 	Role *AccountRole `json:"role,omitempty"`
