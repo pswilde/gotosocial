@@ -100,7 +100,7 @@ func (f *Filter) isStatusHomeTimelineable(ctx context.Context, owner *gtsmodel.A
 
 	if *owner.NoisyMode {
 		// Noisy Mode
-        // They just want to see everything relevant, that's fine but noisy eh
+		// They just want to see everything relevant, that's fine but noisy eh
 		return true, nil
 	}
 

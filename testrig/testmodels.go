@@ -512,8 +512,8 @@ func NewTestAccounts() map[string]*gtsmodel.Account {
 			HideCollections:       util.Ptr(false),
 			SuspensionOrigin:      "",
 			EnableRSS:             util.Ptr(false),
-			ShowAllReplies:          util.Ptr(false),
-			NoisyMode:               util.Ptr(false),
+			ShowAllReplies:        util.Ptr(false),
+			NoisyMode:             util.Ptr(false),
 		},
 		"remote_account_1": {
 			ID:                    "01F8MH5ZK5VRH73AKHQM6Y9VNX",
@@ -551,8 +551,8 @@ func NewTestAccounts() map[string]*gtsmodel.Account {
 			HideCollections:       util.Ptr(false),
 			SuspensionOrigin:      "",
 			EnableRSS:             util.Ptr(false),
-			ShowAllReplies:          util.Ptr(false),
-			NoisyMode:               util.Ptr(false),
+			ShowAllReplies:        util.Ptr(false),
+			NoisyMode:             util.Ptr(false),
 		},
 		"remote_account_2": {
 			ID:                    "01FHMQX3GAABWSM0S2VZEC2SWC",
@@ -590,8 +590,8 @@ func NewTestAccounts() map[string]*gtsmodel.Account {
 			HideCollections:       util.Ptr(false),
 			SuspensionOrigin:      "",
 			EnableRSS:             util.Ptr(false),
-			ShowAllReplies:          util.Ptr(false),
-			NoisyMode:               util.Ptr(false),
+			ShowAllReplies:        util.Ptr(false),
+			NoisyMode:             util.Ptr(false),
 		},
 		"remote_account_3": {
 			ID:                      "062G5WYKY35KKD12EMSM3F8PJ8",

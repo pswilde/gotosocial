@@ -188,14 +188,14 @@ function UserProfileForm({ data: profile }) {
 					rel="noreferrer"
 				>
 					Learn more about these settings (opens in a new tab)
-                </a>
+            </a>
 			</div>
 			<Checkbox
 				field={form.showAllReplies}
 				label="Enable showing all follow's replies in home timeline"
 			/>
 			<Checkbox
-				field={form.NoisyMode}
+				field={form.noisyMode}
 				label="Enable Noisy Mode"
 			/>
 
