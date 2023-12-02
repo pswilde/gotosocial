@@ -151,6 +151,12 @@ func (c *Converter) ASRepresentationToAccount(ctx context.Context, accountable a
 	// Assume not an RSS feed.
 	acct.EnableRSS = util.Ptr(false)
 
+	// Assume they don't want all eplies
+	acct.ShowAllReplies = util.Ptr(false)
+
+	// Assume they don't want noisy mode
+	acct.NoisyMode = util.Ptr(false)
+
 	// Extract the URL property.
 	urls := ap.GetURL(accountable)
 	if len(urls) == 0 {

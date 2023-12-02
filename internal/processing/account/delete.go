@@ -526,6 +526,8 @@ func stubbifyAccount(account *gtsmodel.Account, origin string) []string {
 	account.SuspensionOrigin = origin
 	account.HideCollections = util.Ptr(true)
 	account.EnableRSS = util.Ptr(false)
+	account.ShowAllReplies = util.Ptr(false)
+	account.NoisyMode = util.Ptr(false)
 
 	return []string{
 		"fetched_at",
@@ -549,6 +551,8 @@ func stubbifyAccount(account *gtsmodel.Account, origin string) []string {
 		"suspension_origin",
 		"hide_collections",
 		"enable_rss",
+		"show_all_replies",
+		"noisy_mode",
 	}
 }
 

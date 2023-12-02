@@ -63,6 +63,8 @@ function UserProfileForm({ data: profile }) {
 		- file avatar
 		- file header
 		- bool enable_rss
+		- bool show_all_replies
+		- bool noisy_mode
 		- string custom_css (if enabled)
 	*/
 
@@ -84,6 +86,8 @@ function UserProfileForm({ data: profile }) {
 		locked: useBoolInput("locked", { source: profile }),
 		discoverable: useBoolInput("discoverable", { source: profile}),
 		enableRSS: useBoolInput("enable_rss", { source: profile }),
+		showAllReplies: useBoolInput("show_all_replies", { source: profile }),
+		noisyMode: useBoolInput("noisy_mode", { source: profile }),
 		fields: useFieldArrayInput("fields_attributes", {
 			defaultValue: profile?.source?.fields,
 			length: instanceConfig.maxPinnedFields
@@ -175,6 +179,24 @@ function UserProfileForm({ data: profile }) {
 			<Checkbox
 				field={form.enableRSS}
 				label="Enable RSS feed of Public posts"
+			/>
+            <div className="form-section-docs">
+				<h3>Timelines</h3>
+                <a href="https://docs.gotosocial.org/en/latest/user_guide/settings/#timelines"
+					target="_blank"
+					className="docslink"
+					rel="noreferrer"
+				>
+					Learn more about these settings (opens in a new tab)
+                </a>
+			</div>
+			<Checkbox
+				field={form.showAllReplies}
+				label="Enable showing all follow's replies in home timeline"
+			/>
+			<Checkbox
+				field={form.NoisyMode}
+				label="Enable Noisy Mode"
 			/>
 
 			<div className="form-section-docs">

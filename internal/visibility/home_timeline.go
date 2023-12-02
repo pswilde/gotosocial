@@ -98,6 +98,12 @@ func (f *Filter) isStatusHomeTimelineable(ctx context.Context, owner *gtsmodel.A
 		return true, nil
 	}
 
+	if *owner.NoisyMode {
+		// Noisy Mode
+        // They just want to see everything relevant, that's fine but noisy eh
+		return true, nil
+	}
+
 	var (
 		next      = status
 		oneAuthor = true // Assume one author until proven otherwise.
@@ -160,7 +166,7 @@ func (f *Filter) isStatusHomeTimelineable(ctx context.Context, owner *gtsmodel.A
 		}
 	}
 
-	if next != status && !oneAuthor && !included && !converstn {
+	if next != status && !oneAuthor && !included && !converstn && !*owner.ShowAllReplies {
 		log.Trace(ctx, "ignoring visible reply in conversation irrelevant to owner")
 		return false, nil
 	}

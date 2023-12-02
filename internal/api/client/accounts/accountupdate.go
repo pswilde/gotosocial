@@ -120,6 +120,16 @@ import (
 //		description: Enable RSS feed for this account's Public posts at `/[username]/feed.rss`
 //		type: boolean
 //	-
+//		name: show_all_replies
+//		in: formData
+//		description: Show all replies from follow's in the home timeline
+//		type: boolean
+//	-
+//		name: noisy_mode
+//		in: formData
+//		description: Enable Noisy Mode
+//		type: boolean
+//	-
 //		name: fields_attributes
 //		in: formData
 //		description: Profile fields to be added to this account's profile
@@ -255,7 +265,9 @@ func parseUpdateAccountForm(c *gin.Context) (*apimodel.UpdateCredentialsRequest,
 			form.Source.StatusContentType == nil &&
 			form.FieldsAttributes == nil &&
 			form.CustomCSS == nil &&
-			form.EnableRSS == nil) {
+			form.EnableRSS == nil &&
+			form.ShowAllReplies == nil &&
+			form.NoisyMode == nil) {
 		return nil, errors.New("empty form submitted")
 	}
 

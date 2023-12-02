@@ -263,6 +263,14 @@ func (p *Processor) Update(ctx context.Context, account *gtsmodel.Account, form 
 		account.EnableRSS = form.EnableRSS
 	}
 
+	if form.ShowAllReplies != nil {
+		account.ShowAllReplies = form.ShowAllReplies
+	}
+
+	if form.NoisyMode != nil {
+		account.NoisyMode = form.NoisyMode
+	}
+
 	err := p.state.DB.UpdateAccount(ctx, account)
 	if err != nil {
 		return nil, gtserror.NewErrorInternalError(fmt.Errorf("could not update account %s: %s", account.ID, err))

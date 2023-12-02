@@ -105,6 +105,20 @@ Turning on the discoverable flag may take a week or more to propagate; your acco
 !!! info
     The discoverable setting is about **discoverability of your account**, not searchability of your posts. It has nothing to do with indexing of your posts for search by Mastodon instances, or other federated instances that use full text search!
 
+### Timelines
+
+#### Enable showing all follow's replies in home timeline
+
+By default, when an account you follow replies to an account you do not follow it is ignored unless you, or someone else you follow, is mentioned in this reply.  
+However, if you wish to make these replies visible, you can do so by enabling this option.
+
+!!! info
+    Enabling this option will increase the amount of status visible in your home timeline
+    
+#### Noisy Mode
+  
+Like Showing all replies, this mode shows loads more stuff in the home timeline. That's lengthy posts, conversations, etc. all in the home timeline. GtS normally hides these for a more pleasant experience
+    
 ### Advanced
 
 #### Custom CSS

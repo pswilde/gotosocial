@@ -204,6 +204,14 @@ definitions:
                 description: Account has enabled RSS feed.
                 type: boolean
                 x-go-name: EnableRSS
+            show_all_replies:
+                description: Account has enabled ShowAllReplies
+                type: boolean
+                x-go-name: ShowAllReplies
+            noisy_mode:
+                description: Account has enabled NoisyMode
+                type: boolean
+                x-go-name: NoisyMode
             fields:
                 description: Additional metadata attached to this account's profile.
                 items:
@@ -3712,6 +3720,14 @@ paths:
                 - description: Enable RSS feed for this account's Public posts at `/[username]/feed.rss`
                   in: formData
                   name: enable_rss
+                  type: boolean
+                - description: Show All Replies from all follows in home timeline
+                  in: formData
+                  name: show_all_replies
+                  type: boolean
+                - description: Noisy Mode - show as much stuff as possible (so long as it's relevant) in the home timeline
+                  in: formData
+                  name: noisy_mode
                   type: boolean
                 - description: Profile fields to be added to this account's profile
                   in: formData
