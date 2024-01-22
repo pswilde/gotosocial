@@ -392,8 +392,8 @@ func (suite *InboxPostTestSuite) TestPostUpdate() {
 	suite.EqualValues(requestingAccount.HeaderRemoteURL, dbUpdatedAccount.HeaderRemoteURL)
 	suite.EqualValues(requestingAccount.Note, dbUpdatedAccount.Note)
 	suite.EqualValues(requestingAccount.Memorial, dbUpdatedAccount.Memorial)
-	suite.EqualValues(requestingAccount.AlsoKnownAs, dbUpdatedAccount.AlsoKnownAs)
-	suite.EqualValues(requestingAccount.MovedToAccountID, dbUpdatedAccount.MovedToAccountID)
+	suite.EqualValues(requestingAccount.AlsoKnownAsURIs, dbUpdatedAccount.AlsoKnownAsURIs)
+	suite.EqualValues(requestingAccount.MovedToURI, dbUpdatedAccount.MovedToURI)
 	suite.EqualValues(requestingAccount.Bot, dbUpdatedAccount.Bot)
 	suite.EqualValues(requestingAccount.Reason, dbUpdatedAccount.Reason)
 	suite.EqualValues(requestingAccount.Locked, dbUpdatedAccount.Locked)
@@ -478,15 +478,17 @@ func (suite *InboxPostTestSuite) TestPostEmptyCreate() {
 		targetAccount     = suite.testAccounts["local_account_1"]
 	)
 
-	// Post a create with no object.
+	// Post a create with no object, this
+	// should get accepted and silently dropped
+	// as the lack of ID marks it as transient.
 	create := streams.NewActivityStreamsCreate()
 
 	suite.inboxPost(
 		create,
 		requestingAccount,
 		targetAccount,
-		http.StatusBadRequest,
-		`{"error":"Bad Request: missing ActivityStreams id property"}`,
+		http.StatusAccepted,
+		`{"status":"Accepted"}`,
 		suite.signatureCheck,
 	)
 }

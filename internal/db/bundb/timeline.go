@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/superseriousbusiness/gotosocial/internal/db"
@@ -28,10 +29,8 @@ import (
 	"github.com/superseriousbusiness/gotosocial/internal/gtserror"
 	"github.com/superseriousbusiness/gotosocial/internal/gtsmodel"
 	"github.com/superseriousbusiness/gotosocial/internal/id"
-	"github.com/superseriousbusiness/gotosocial/internal/log"
 	"github.com/superseriousbusiness/gotosocial/internal/state"
 	"github.com/uptrace/bun"
-	"golang.org/x/exp/slices"
 )
 
 type timelineDB struct {
@@ -155,20 +154,8 @@ func (t *timelineDB) GetHomeTimeline(ctx context.Context, accountID string, maxI
 		}
 	}
 
-	statuses := make([]*gtsmodel.Status, 0, len(statusIDs))
-	for _, id := range statusIDs {
-		// Fetch status from db for ID
-		status, err := t.state.DB.GetStatusByID(ctx, id)
-		if err != nil {
-			log.Errorf(ctx, "error fetching status %q: %v", id, err)
-			continue
-		}
-
-		// Append status to slice
-		statuses = append(statuses, status)
-	}
-
-	return statuses, nil
+	// Return status IDs loaded from cache + db.
+	return t.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }
 
 func (t *timelineDB) GetPublicTimeline(ctx context.Context, maxID string, sinceID string, minID string, limit int, local bool) ([]*gtsmodel.Status, error) {
@@ -256,20 +243,8 @@ func (t *timelineDB) GetPublicTimeline(ctx context.Context, maxID string, sinceI
 		}
 	}
 
-	statuses := make([]*gtsmodel.Status, 0, len(statusIDs))
-	for _, id := range statusIDs {
-		// Fetch status from db for ID
-		status, err := t.state.DB.GetStatusByID(ctx, id)
-		if err != nil {
-			log.Errorf(ctx, "error fetching status %q: %v", id, err)
-			continue
-		}
-
-		// Append status to slice
-		statuses = append(statuses, status)
-	}
-
-	return statuses, nil
+	// Return status IDs loaded from cache + db.
+	return t.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }
 
 // TODO optimize this query and the logic here, because it's slow as balls -- it takes like a literal second to return with a limit of 20!
@@ -311,22 +286,27 @@ func (t *timelineDB) GetFavedTimeline(ctx context.Context, accountID string, max
 	}
 
 	// Sort by favourite ID rather than status ID
-	slices.SortFunc(faves, func(a, b *gtsmodel.StatusFave) bool {
-		return a.ID > b.ID
+	slices.SortFunc(faves, func(a, b *gtsmodel.StatusFave) int {
+		const k = -1
+		switch {
+		case a.ID > b.ID:
+			return +k
+		case a.ID < b.ID:
+			return -k
+		default:
+			return 0
+		}
 	})
 
-	statuses := make([]*gtsmodel.Status, 0, len(faves))
+	// Convert fave IDs to status IDs.
+	statusIDs := make([]string, len(faves))
+	for i, fave := range faves {
+		statusIDs[i] = fave.StatusID
+	}
 
-	for _, fave := range faves {
-		// Fetch status from db for corresponding favourite
-		status, err := t.state.DB.GetStatusByID(ctx, fave.StatusID)
-		if err != nil {
-			log.Errorf(ctx, "error fetching status for fave %q: %v", fave.ID, err)
-			continue
-		}
-
-		// Append status to slice
-		statuses = append(statuses, status)
+	statuses, err := t.state.DB.GetStatusesByIDs(ctx, statusIDs)
+	if err != nil {
+		return nil, "", "", err
 	}
 
 	nextMaxID := faves[len(faves)-1].ID
@@ -445,20 +425,8 @@ func (t *timelineDB) GetListTimeline(
 		}
 	}
 
-	statuses := make([]*gtsmodel.Status, 0, len(statusIDs))
-	for _, id := range statusIDs {
-		// Fetch status from db for ID
-		status, err := t.state.DB.GetStatusByID(ctx, id)
-		if err != nil {
-			log.Errorf(ctx, "error fetching status %q: %v", id, err)
-			continue
-		}
-
-		// Append status to slice
-		statuses = append(statuses, status)
-	}
-
-	return statuses, nil
+	// Return status IDs loaded from cache + db.
+	return t.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }
 
 func (t *timelineDB) GetTagTimeline(
@@ -553,18 +521,6 @@ func (t *timelineDB) GetTagTimeline(
 		}
 	}
 
-	statuses := make([]*gtsmodel.Status, 0, len(statusIDs))
-	for _, id := range statusIDs {
-		// Fetch status from db for ID
-		status, err := t.state.DB.GetStatusByID(ctx, id)
-		if err != nil {
-			log.Errorf(ctx, "error fetching status %q: %v", id, err)
-			continue
-		}
-
-		// Append status to slice
-		statuses = append(statuses, status)
-	}
-
-	return statuses, nil
+	// Return status IDs loaded from cache + db.
+	return t.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }

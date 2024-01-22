@@ -116,7 +116,7 @@ func (a *accountDB) GetAccountByUsernameDomain(ctx context.Context, username str
 
 	return a.getAccount(
 		ctx,
-		"Username.Domain",
+		"Username,Domain",
 		func(account *gtsmodel.Account) error {
 			q := a.db.NewSelect().
 				Model(account)
@@ -224,7 +224,7 @@ func (a *accountDB) GetInstanceAccount(ctx context.Context, domain string) (*gts
 
 func (a *accountDB) getAccount(ctx context.Context, lookup string, dbQuery func(*gtsmodel.Account) error, keyParts ...any) (*gtsmodel.Account, error) {
 	// Fetch account from database cache with loader callback
-	account, err := a.state.Caches.GTS.Account().Load(lookup, func() (*gtsmodel.Account, error) {
+	account, err := a.state.Caches.GTS.Account.LoadOne(lookup, func() (*gtsmodel.Account, error) {
 		var account gtsmodel.Account
 
 		// Not cached! Perform database query
@@ -254,7 +254,7 @@ func (a *accountDB) getAccount(ctx context.Context, lookup string, dbQuery func(
 func (a *accountDB) PopulateAccount(ctx context.Context, account *gtsmodel.Account) error {
 	var (
 		err  error
-		errs = gtserror.NewMultiError(3)
+		errs = gtserror.NewMultiError(5)
 	)
 
 	if account.AvatarMediaAttachment == nil && account.AvatarMediaAttachmentID != "" {
@@ -279,6 +279,37 @@ func (a *accountDB) PopulateAccount(ctx context.Context, account *gtsmodel.Accou
 		}
 	}
 
+	if !account.AlsoKnownAsPopulated() {
+		// Account alsoKnownAs accounts are
+		// out-of-date with URIs, repopulate.
+		alsoKnownAs := make([]*gtsmodel.Account, 0)
+		for _, uri := range account.AlsoKnownAsURIs {
+			akaAcct, err := a.state.DB.GetAccountByURI(
+				gtscontext.SetBarebones(ctx),
+				uri,
+			)
+			if err != nil {
+				errs.Appendf("error populating also known as account %s: %w", uri, err)
+				continue
+			}
+
+			alsoKnownAs = append(alsoKnownAs, akaAcct)
+		}
+
+		account.AlsoKnownAs = alsoKnownAs
+	}
+
+	if account.MovedTo == nil && account.MovedToURI != "" {
+		// Account movedTo is not set, fetch from database.
+		account.MovedTo, err = a.state.DB.GetAccountByURI(
+			gtscontext.SetBarebones(ctx),
+			account.MovedToURI,
+		)
+		if err != nil {
+			errs.Appendf("error populating moved to account: %w", err)
+		}
+	}
+
 	if !account.EmojisPopulated() {
 		// Account emojis are out-of-date with IDs, repopulate.
 		account.Emojis, err = a.state.DB.GetEmojisByIDs(
@@ -294,7 +325,7 @@ func (a *accountDB) PopulateAccount(ctx context.Context, account *gtsmodel.Accou
 }
 
 func (a *accountDB) PutAccount(ctx context.Context, account *gtsmodel.Account) error {
-	return a.state.Caches.GTS.Account().Store(account, func() error {
+	return a.state.Caches.GTS.Account.Store(account, func() error {
 		// It is safe to run this database transaction within cache.Store
 		// as the cache does not attempt a mutex lock until AFTER hook.
 		//
@@ -323,7 +354,7 @@ func (a *accountDB) UpdateAccount(ctx context.Context, account *gtsmodel.Account
 		columns = append(columns, "updated_at")
 	}
 
-	return a.state.Caches.GTS.Account().Store(account, func() error {
+	return a.state.Caches.GTS.Account.Store(account, func() error {
 		// It is safe to run this database transaction within cache.Store
 		// as the cache does not attempt a mutex lock until AFTER hook.
 		//
@@ -362,7 +393,7 @@ func (a *accountDB) UpdateAccount(ctx context.Context, account *gtsmodel.Account
 }
 
 func (a *accountDB) DeleteAccount(ctx context.Context, id string) error {
-	defer a.state.Caches.GTS.Account().Invalidate("ID", id)
+	defer a.state.Caches.GTS.Account.Invalidate("ID", id)
 
 	// Load account into cache before attempting a delete,
 	// as we need it cached in order to trigger the invalidate
@@ -604,6 +635,10 @@ func (a *accountDB) GetAccountStatuses(ctx context.Context, accountID string, li
 		return nil, err
 	}
 
+	if len(statusIDs) == 0 {
+		return nil, db.ErrNoEntries
+	}
+
 	// If we're paging up, we still want statuses
 	// to be sorted by ID desc, so reverse ids slice.
 	// https://zchee.github.io/golang-wiki/SliceTricks/#reversing
@@ -613,7 +648,7 @@ func (a *accountDB) GetAccountStatuses(ctx context.Context, accountID string, li
 		}
 	}
 
-	return a.statusesFromIDs(ctx, statusIDs)
+	return a.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }
 
 func (a *accountDB) GetAccountPinnedStatuses(ctx context.Context, accountID string) ([]*gtsmodel.Status, error) {
@@ -631,7 +666,11 @@ func (a *accountDB) GetAccountPinnedStatuses(ctx context.Context, accountID stri
 		return nil, err
 	}
 
-	return a.statusesFromIDs(ctx, statusIDs)
+	if len(statusIDs) == 0 {
+		return nil, db.ErrNoEntries
+	}
+
+	return a.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }
 
 func (a *accountDB) GetAccountWebStatuses(ctx context.Context, accountID string, limit int, maxID string) ([]*gtsmodel.Status, error) {
@@ -679,29 +718,9 @@ func (a *accountDB) GetAccountWebStatuses(ctx context.Context, accountID string,
 		return nil, err
 	}
 
-	return a.statusesFromIDs(ctx, statusIDs)
-}
-
-func (a *accountDB) statusesFromIDs(ctx context.Context, statusIDs []string) ([]*gtsmodel.Status, error) {
-	// Catch case of no statuses early
 	if len(statusIDs) == 0 {
 		return nil, db.ErrNoEntries
 	}
 
-	// Allocate return slice (will be at most len statusIDS)
-	statuses := make([]*gtsmodel.Status, 0, len(statusIDs))
-
-	for _, id := range statusIDs {
-		// Fetch from status from database by ID
-		status, err := a.state.DB.GetStatusByID(ctx, id)
-		if err != nil {
-			log.Errorf(ctx, "error getting status %q: %v", id, err)
-			continue
-		}
-
-		// Append to return slice
-		statuses = append(statuses, status)
-	}
-
-	return statuses, nil
+	return a.state.DB.GetStatusesByIDs(ctx, statusIDs)
 }

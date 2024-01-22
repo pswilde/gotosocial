@@ -42,7 +42,7 @@ function parseFields(entries: HookedForm[], length: number): HookedForm[] {
 	return fields;
 }
 
-export default function useArrayInput(
+export default function useFieldArrayInput(
 	{ name }: CreateHookNames,
 	{
 		initialValue,

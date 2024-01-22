@@ -90,6 +90,7 @@ func (c *Converter) AccountToAPIAccountSensitive(ctx context.Context, a *gtsmode
 		Note:                a.NoteRaw,
 		Fields:              c.fieldsToAPIFields(a.FieldsRaw),
 		FollowRequestsCount: frc,
+		AlsoKnownAsURIs:     a.AlsoKnownAsURIs,
 	}
 
 	return apiAccount, nil
@@ -111,27 +112,27 @@ func (c *Converter) AccountToAPIAccountPublic(ctx context.Context, a *gtsmodel.A
 
 	followersCount, err := c.state.DB.CountAccountFollowers(ctx, a.ID)
 	if err != nil && !errors.Is(err, db.ErrNoEntries) {
-		return nil, fmt.Errorf("AccountToAPIAccountPublic: error counting followers: %w", err)
+		return nil, gtserror.Newf("error counting followers: %w", err)
 	}
 
 	followingCount, err := c.state.DB.CountAccountFollows(ctx, a.ID)
 	if err != nil && !errors.Is(err, db.ErrNoEntries) {
-		return nil, fmt.Errorf("AccountToAPIAccountPublic: error counting following: %w", err)
+		return nil, gtserror.Newf("error counting following: %w", err)
 	}
 
 	statusesCount, err := c.state.DB.CountAccountStatuses(ctx, a.ID)
 	if err != nil && !errors.Is(err, db.ErrNoEntries) {
-		return nil, fmt.Errorf("AccountToAPIAccountPublic: error counting statuses: %w", err)
+		return nil, gtserror.Newf("error counting statuses: %w", err)
 	}
 
 	var lastStatusAt *string
 	lastPosted, err := c.state.DB.GetAccountLastPosted(ctx, a.ID, false)
 	if err != nil && !errors.Is(err, db.ErrNoEntries) {
-		return nil, fmt.Errorf("AccountToAPIAccountPublic: error counting statuses: %w", err)
+		return nil, gtserror.Newf("error getting last posted: %w", err)
 	}
 
 	if !lastPosted.IsZero() {
-		lastStatusAt = func() *string { t := util.FormatISO8601(lastPosted); return &t }()
+		lastStatusAt = util.Ptr(util.FormatISO8601(lastPosted))
 	}
 
 	// Profile media + nice extras:
@@ -180,7 +181,7 @@ func (c *Converter) AccountToAPIAccountPublic(ctx context.Context, a *gtsmodel.A
 		// de-punify it just in case.
 		d, err := util.DePunify(a.Domain)
 		if err != nil {
-			return nil, fmt.Errorf("AccountToAPIAccountPublic: error de-punifying domain %s for account id %s: %w", a.Domain, a.ID, err)
+			return nil, gtserror.Newf("error de-punifying domain %s for account id %s: %w", a.Domain, a.ID, err)
 		}
 
 		acct = a.Username + "@" + d
@@ -191,7 +192,7 @@ func (c *Converter) AccountToAPIAccountPublic(ctx context.Context, a *gtsmodel.A
 		if !a.IsInstance() {
 			user, err := c.state.DB.GetUserByAccountID(ctx, a.ID)
 			if err != nil {
-				return nil, fmt.Errorf("AccountToAPIAccountPublic: error getting user from database for account id %s: %w", a.ID, err)
+				return nil, gtserror.Newf("error getting user from database for account id %s: %w", a.ID, err)
 			}
 
 			switch {
@@ -207,6 +208,40 @@ func (c *Converter) AccountToAPIAccountPublic(ctx context.Context, a *gtsmodel.A
 		acct = a.Username // omit domain
 	}
 
+	// Populate moved.
+	var moved *apimodel.Account
+	if a.MovedTo != nil {
+		moved, err = c.AccountToAPIAccountPublic(ctx, a.MovedTo)
+		if err != nil {
+			log.Errorf(ctx, "error converting account movedTo: %v", err)
+		}
+	}
+
+	// Bool ptrs should be set, but warn
+	// and use a default if they're not.
+	var boolPtrDef = func(
+		pName string,
+		p *bool,
+		d bool,
+	) bool {
+		if p != nil {
+			return *p
+		}
+
+		log.Warnf(ctx,
+			"%s ptr was nil, using default %t",
+			pName, d,
+		)
+		return d
+	}
+
+	var (
+		locked       = boolPtrDef("locked", a.Locked, true)
+		discoverable = boolPtrDef("discoverable", a.Discoverable, false)
+		bot          = boolPtrDef("bot", a.Bot, false)
+		enableRSS    = boolPtrDef("enableRSS", a.EnableRSS, false)
+	)
+
 	// Remaining properties are simple and
 	// can be populated directly below.
 
@@ -215,9 +250,9 @@ func (c *Converter) AccountToAPIAccountPublic(ctx context.Context, a *gtsmodel.A
 		Username:       a.Username,
 		Acct:           acct,
 		DisplayName:    a.DisplayName,
-		Locked:         *a.Locked,
-		Discoverable:   *a.Discoverable,
-		Bot:            *a.Bot,
+		Locked:         locked,
+		Discoverable:   discoverable,
+		Bot:            bot,
 		CreatedAt:      util.FormatISO8601(a.CreatedAt),
 		Note:           a.Note,
 		URL:            a.URL,
@@ -233,10 +268,11 @@ func (c *Converter) AccountToAPIAccountPublic(ctx context.Context, a *gtsmodel.A
 		Fields:         fields,
 		Suspended:      !a.SuspendedAt.IsZero(),
 		CustomCSS:      a.CustomCSS,
-		EnableRSS:      *a.EnableRSS,
+		EnableRSS:      enableRSS,
 		ShowAllReplies: *a.ShowAllReplies,
 		NoisyMode:      *a.NoisyMode,
 		Role:           role,
+		Moved:          moved,
 	}
 
 	// Bodge default avatar + header in,
@@ -943,20 +979,23 @@ func (c *Converter) InstanceRuleToAdminAPIRule(r *gtsmodel.Rule) *apimodel.Admin
 // InstanceToAPIV1Instance converts a gts instance into its api equivalent for serving at /api/v1/instance
 func (c *Converter) InstanceToAPIV1Instance(ctx context.Context, i *gtsmodel.Instance) (*apimodel.InstanceV1, error) {
 	instance := &apimodel.InstanceV1{
-		URI:              i.URI,
-		AccountDomain:    config.GetAccountDomain(),
-		Title:            i.Title,
-		Description:      i.Description,
-		ShortDescription: i.ShortDescription,
-		Email:            i.ContactEmail,
-		Version:          config.GetSoftwareVersion(),
-		Languages:        config.GetInstanceLanguages().TagStrs(),
-		Registrations:    config.GetAccountsRegistrationOpen(),
-		ApprovalRequired: config.GetAccountsApprovalRequired(),
-		InvitesEnabled:   false, // todo: not supported yet
-		MaxTootChars:     uint(config.GetStatusesMaxChars()),
-		Rules:            c.InstanceRulesToAPIRules(i.Rules),
-		Terms:            i.Terms,
+		URI:                  i.URI,
+		AccountDomain:        config.GetAccountDomain(),
+		Title:                i.Title,
+		Description:          i.Description,
+		DescriptionText:      i.DescriptionText,
+		ShortDescription:     i.ShortDescription,
+		ShortDescriptionText: i.ShortDescriptionText,
+		Email:                i.ContactEmail,
+		Version:              config.GetSoftwareVersion(),
+		Languages:            config.GetInstanceLanguages().TagStrs(),
+		Registrations:        config.GetAccountsRegistrationOpen(),
+		ApprovalRequired:     config.GetAccountsApprovalRequired(),
+		InvitesEnabled:       false, // todo: not supported yet
+		MaxTootChars:         uint(config.GetStatusesMaxChars()),
+		Rules:                c.InstanceRulesToAPIRules(i.Rules),
+		Terms:                i.Terms,
+		TermsRaw:             i.TermsText,
 	}
 
 	if config.GetInstanceInjectMastodonVersion() {
@@ -1052,16 +1091,18 @@ func (c *Converter) InstanceToAPIV1Instance(ctx context.Context, i *gtsmodel.Ins
 // InstanceToAPIV2Instance converts a gts instance into its api equivalent for serving at /api/v2/instance
 func (c *Converter) InstanceToAPIV2Instance(ctx context.Context, i *gtsmodel.Instance) (*apimodel.InstanceV2, error) {
 	instance := &apimodel.InstanceV2{
-		Domain:        i.Domain,
-		AccountDomain: config.GetAccountDomain(),
-		Title:         i.Title,
-		Version:       config.GetSoftwareVersion(),
-		SourceURL:     instanceSourceURL,
-		Description:   i.Description,
-		Usage:         apimodel.InstanceV2Usage{}, // todo: not implemented
-		Languages:     config.GetInstanceLanguages().TagStrs(),
-		Rules:         c.InstanceRulesToAPIRules(i.Rules),
-		Terms:         i.Terms,
+		Domain:          i.Domain,
+		AccountDomain:   config.GetAccountDomain(),
+		Title:           i.Title,
+		Version:         config.GetSoftwareVersion(),
+		SourceURL:       instanceSourceURL,
+		Description:     i.Description,
+		DescriptionText: i.DescriptionText,
+		Usage:           apimodel.InstanceV2Usage{}, // todo: not implemented
+		Languages:       config.GetInstanceLanguages().TagStrs(),
+		Rules:           c.InstanceRulesToAPIRules(i.Rules),
+		Terms:           i.Terms,
+		TermsText:       i.TermsText,
 	}
 
 	if config.GetInstanceInjectMastodonVersion() {
@@ -1549,20 +1590,15 @@ func (c *Converter) PollToAPIPoll(ctx context.Context, requester *gtsmodel.Accou
 func (c *Converter) convertAttachmentsToAPIAttachments(ctx context.Context, attachments []*gtsmodel.MediaAttachment, attachmentIDs []string) ([]*apimodel.Attachment, error) {
 	var errs gtserror.MultiError
 
-	if len(attachments) == 0 {
+	if len(attachments) == 0 && len(attachmentIDs) > 0 {
 		// GTS model attachments were not populated
 
-		// Preallocate expected GTS slice
-		attachments = make([]*gtsmodel.MediaAttachment, 0, len(attachmentIDs))
+		var err error
 
 		// Fetch GTS models for attachment IDs
-		for _, id := range attachmentIDs {
-			attachment, err := c.state.DB.GetAttachmentByID(ctx, id)
-			if err != nil {
-				errs.Appendf("error fetching attachment %s from database: %v", id, err)
-				continue
-			}
-			attachments = append(attachments, attachment)
+		attachments, err = c.state.DB.GetAttachmentsByIDs(ctx, attachmentIDs)
+		if err != nil {
+			errs.Appendf("error fetching attachments from database: %w", err)
 		}
 	}
 
@@ -1573,7 +1609,7 @@ func (c *Converter) convertAttachmentsToAPIAttachments(ctx context.Context, atta
 	for _, attachment := range attachments {
 		apiAttachment, err := c.AttachmentToAPIAttachment(ctx, attachment)
 		if err != nil {
-			errs.Appendf("error converting attchment %s to api attachment: %v", attachment.ID, err)
+			errs.Appendf("error converting attchment %s to api attachment: %w", attachment.ID, err)
 			continue
 		}
 		apiAttachments = append(apiAttachments, &apiAttachment)
@@ -1586,20 +1622,15 @@ func (c *Converter) convertAttachmentsToAPIAttachments(ctx context.Context, atta
 func (c *Converter) convertEmojisToAPIEmojis(ctx context.Context, emojis []*gtsmodel.Emoji, emojiIDs []string) ([]apimodel.Emoji, error) {
 	var errs gtserror.MultiError
 
-	if len(emojis) == 0 {
+	if len(emojis) == 0 && len(emojiIDs) > 0 {
 		// GTS model attachments were not populated
 
-		// Preallocate expected GTS slice
-		emojis = make([]*gtsmodel.Emoji, 0, len(emojiIDs))
+		var err error
 
 		// Fetch GTS models for emoji IDs
-		for _, id := range emojiIDs {
-			emoji, err := c.state.DB.GetEmojiByID(ctx, id)
-			if err != nil {
-				errs.Appendf("error fetching emoji %s from database: %v", id, err)
-				continue
-			}
-			emojis = append(emojis, emoji)
+		emojis, err = c.state.DB.GetEmojisByIDs(ctx, emojiIDs)
+		if err != nil {
+			errs.Appendf("error fetching emojis from database: %w", err)
 		}
 	}
 
@@ -1610,7 +1641,7 @@ func (c *Converter) convertEmojisToAPIEmojis(ctx context.Context, emojis []*gtsm
 	for _, emoji := range emojis {
 		apiEmoji, err := c.EmojiToAPIEmoji(ctx, emoji)
 		if err != nil {
-			errs.Appendf("error converting emoji %s to api emoji: %v", emoji.ID, err)
+			errs.Appendf("error converting emoji %s to api emoji: %w", emoji.ID, err)
 			continue
 		}
 		apiEmojis = append(apiEmojis, apiEmoji)
@@ -1623,7 +1654,7 @@ func (c *Converter) convertEmojisToAPIEmojis(ctx context.Context, emojis []*gtsm
 func (c *Converter) convertMentionsToAPIMentions(ctx context.Context, mentions []*gtsmodel.Mention, mentionIDs []string) ([]apimodel.Mention, error) {
 	var errs gtserror.MultiError
 
-	if len(mentions) == 0 {
+	if len(mentions) == 0 && len(mentionIDs) > 0 {
 		var err error
 
 		// GTS model mentions were not populated
@@ -1631,7 +1662,7 @@ func (c *Converter) convertMentionsToAPIMentions(ctx context.Context, mentions [
 		// Fetch GTS models for mention IDs
 		mentions, err = c.state.DB.GetMentions(ctx, mentionIDs)
 		if err != nil {
-			errs.Appendf("error fetching mentions from database: %v", err)
+			errs.Appendf("error fetching mentions from database: %w", err)
 		}
 	}
 
@@ -1642,7 +1673,7 @@ func (c *Converter) convertMentionsToAPIMentions(ctx context.Context, mentions [
 	for _, mention := range mentions {
 		apiMention, err := c.MentionToAPIMention(ctx, mention)
 		if err != nil {
-			errs.Appendf("error converting mention %s to api mention: %v", mention.ID, err)
+			errs.Appendf("error converting mention %s to api mention: %w", mention.ID, err)
 			continue
 		}
 		apiMentions = append(apiMentions, apiMention)
@@ -1655,12 +1686,12 @@ func (c *Converter) convertMentionsToAPIMentions(ctx context.Context, mentions [
 func (c *Converter) convertTagsToAPITags(ctx context.Context, tags []*gtsmodel.Tag, tagIDs []string) ([]apimodel.Tag, error) {
 	var errs gtserror.MultiError
 
-	if len(tags) == 0 {
+	if len(tags) == 0 && len(tagIDs) > 0 {
 		var err error
 
 		tags, err = c.state.DB.GetTags(ctx, tagIDs)
 		if err != nil {
-			errs.Appendf("error fetching tags from database: %v", err)
+			errs.Appendf("error fetching tags from database: %w", err)
 		}
 	}
 
@@ -1671,7 +1702,7 @@ func (c *Converter) convertTagsToAPITags(ctx context.Context, tags []*gtsmodel.T
 	for _, tag := range tags {
 		apiTag, err := c.TagToAPITag(ctx, tag, false)
 		if err != nil {
-			errs.Appendf("error converting tag %s to api tag: %v", tag.ID, err)
+			errs.Appendf("error converting tag %s to api tag: %w", tag.ID, err)
 			continue
 		}
 		apiTags = append(apiTags, apiTag)
