@@ -37,7 +37,7 @@ import (
 )
 
 type accountDB struct {
-	db    *DB
+	db    *bun.DB
 	state *state.State
 }
 
@@ -334,7 +334,7 @@ func (a *accountDB) PutAccount(ctx context.Context, account *gtsmodel.Account) e
 		// It is safe to run this database transaction within cache.Store
 		// as the cache does not attempt a mutex lock until AFTER hook.
 		//
-		return a.db.RunInTx(ctx, func(tx Tx) error {
+		return a.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 			// create links between this account and any emojis it uses
 			for _, i := range account.EmojiIDs {
 				if _, err := tx.NewInsert().Model(&gtsmodel.AccountToEmoji{
@@ -363,7 +363,7 @@ func (a *accountDB) UpdateAccount(ctx context.Context, account *gtsmodel.Account
 		// It is safe to run this database transaction within cache.Store
 		// as the cache does not attempt a mutex lock until AFTER hook.
 		//
-		return a.db.RunInTx(ctx, func(tx Tx) error {
+		return a.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 			// create links between this account and any emojis it uses
 			// first clear out any old emoji links
 			if _, err := tx.
@@ -411,7 +411,7 @@ func (a *accountDB) DeleteAccount(ctx context.Context, id string) error {
 		return err
 	}
 
-	return a.db.RunInTx(ctx, func(tx Tx) error {
+	return a.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// clear out any emoji links
 		if _, err := tx.
 			NewDelete().
@@ -532,20 +532,56 @@ func (a *accountDB) GetAccountFaves(ctx context.Context, accountID string) ([]*g
 }
 
 func (a *accountDB) CountAccountStatuses(ctx context.Context, accountID string) (int, error) {
-	return a.db.
-		NewSelect().
-		TableExpr("? AS ?", bun.Ident("statuses"), bun.Ident("status")).
-		Where("? = ?", bun.Ident("status.account_id"), accountID).
-		Count(ctx)
+	counts, err := a.getAccountStatusCounts(ctx, accountID)
+	return counts.Statuses, err
 }
 
 func (a *accountDB) CountAccountPinned(ctx context.Context, accountID string) (int, error) {
-	return a.db.
-		NewSelect().
-		TableExpr("? AS ?", bun.Ident("statuses"), bun.Ident("status")).
-		Where("? = ?", bun.Ident("status.account_id"), accountID).
-		Where("? IS NOT NULL", bun.Ident("status.pinned_at")).
-		Count(ctx)
+	counts, err := a.getAccountStatusCounts(ctx, accountID)
+	return counts.Pinned, err
+}
+
+func (a *accountDB) getAccountStatusCounts(ctx context.Context, accountID string) (struct {
+	Statuses int
+	Pinned   int
+}, error) {
+	// Check for an already cached copy of account status counts.
+	counts, ok := a.state.Caches.GTS.AccountCounts.Get(accountID)
+	if ok {
+		return counts, nil
+	}
+
+	if err := a.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+
+		// Scan database for account statuses.
+		counts.Statuses, err = tx.NewSelect().
+			Table("statuses").
+			Where("? = ?", bun.Ident("account_id"), accountID).
+			Count(ctx)
+		if err != nil {
+			return err
+		}
+
+		// Scan database for pinned statuses.
+		counts.Pinned, err = tx.NewSelect().
+			Table("statuses").
+			Where("? = ?", bun.Ident("account_id"), accountID).
+			Where("? IS NOT NULL", bun.Ident("pinned_at")).
+			Count(ctx)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return counts, err
+	}
+
+	// Store this account counts result in the cache.
+	a.state.Caches.GTS.AccountCounts.Set(accountID, counts)
+
+	return counts, nil
 }
 
 func (a *accountDB) GetAccountStatuses(ctx context.Context, accountID string, limit int, excludeReplies bool, excludeReblogs bool, maxID string, minID string, mediaOnly bool, publicOnly bool) ([]*gtsmodel.Status, error) {
